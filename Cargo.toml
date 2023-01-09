@@ -1,5 +1,5 @@
 [package]
-name = "organizer"
+name = "organize"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,6 +7,8 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+dotenvy = "0.15"
 lazy_static = "1.4"
 sqlx = { version = "0.6", features = [ "runtime-tokio-native-tls" , "sqlite" ] }
+structopt = "0.3"
 tokio = { version = "1", features = ["full"] }
