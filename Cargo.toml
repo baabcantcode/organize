@@ -11,6 +11,8 @@ path = "src/todo.rs"
 
 [dependencies]
 anyhow = "1.0"
+async_once = "0.2"
 dotenvy = "0.15"
+lazy_static = "1.4"
 sqlx = { version = "0.6", features = [ "runtime-tokio-native-tls" , "sqlite" ] }
 tokio = { version = "1", features = ["full"] }

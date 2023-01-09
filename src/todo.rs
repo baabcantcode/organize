@@ -1,28 +1,23 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
+use async_once::AsyncOnce;
 use dotenvy::dotenv;
+use lazy_static::lazy_static;
 use sqlx::sqlite::SqlitePool;
+use sqlx::{Pool, Sqlite};
 use std::env;
-use tokio::sync::OnceCell;
 
-async fn make_pool_result() -> Result<sqlx::Pool<sqlx::Sqlite>> {
-    dotenv().ok();
-    let dbfile = &env::var("DATABASE_URL")?;
-    let pool = SqlitePool::connect(dbfile).await?;
-    Ok(pool)
-}
-
-static POOL: OnceCell<Result<sqlx::Pool<sqlx::Sqlite>>> = OnceCell::const_new();
-
-async fn get_pool() -> Result<&'static sqlx::Pool<sqlx::Sqlite>> {
-    let pool_ref = match POOL.get_or_init(make_pool_result).await.as_ref() {
-        Ok(pool_ref) => pool_ref,
-        Err(_e) => return Err(anyhow!("Failed to initialize DB connection pool")),
-    };
-    Ok(pool_ref)
+lazy_static! {
+/// will panic if DATABASE_URL is invalid or a connection cannot
+/// be established
+    static ref POOL: AsyncOnce<Pool<Sqlite>> = AsyncOnce::new(async {
+        dotenv().ok();
+        let dbfile = &env::var("DATABASE_URL").unwrap();
+        SqlitePool::connect(dbfile).await.unwrap()
+    });
 }
 
 pub async fn add_todo(description: String) -> Result<i64> {
-    let mut conn = get_pool().await?.acquire().await?;
+    let mut conn = POOL.get().await.acquire().await?;
 
     // Insert the task, then obtain the ID of this row
     let id = sqlx::query!(
@@ -48,7 +43,7 @@ WHERE id = ?1
         "#,
         id
     )
-    .execute(get_pool().await?)
+    .execute(POOL.get().await)
     .await?
     .rows_affected();
 
@@ -63,7 +58,7 @@ FROM todos
 ORDER BY id
         "#
     )
-    .fetch_all(get_pool().await?)
+    .fetch_all(POOL.get().await)
     .await?;
 
     for rec in recs {
