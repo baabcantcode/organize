@@ -1,8 +1,8 @@
+use anyhow::{anyhow, Result};
+use dotenvy::dotenv;
 use sqlx::sqlite::SqlitePool;
 use std::env;
-use dotenvy::dotenv;
 use tokio::sync::OnceCell;
-use anyhow::Result;
 
 async fn make_pool_result() -> Result<sqlx::Pool<sqlx::Sqlite>> {
     dotenv().ok();
@@ -11,16 +11,18 @@ async fn make_pool_result() -> Result<sqlx::Pool<sqlx::Sqlite>> {
     Ok(pool)
 }
 
-static POOL: OnceCell<sqlx::Pool<sqlx::Sqlite>> = OnceCell::const_new();
+static POOL: OnceCell<Result<sqlx::Pool<sqlx::Sqlite>>> = OnceCell::const_new();
 
-/// yeah so this library can panic here :x
-/// would only happen if the library turned out to be entirely useless, so theres that
-async fn get_pool() -> &'static sqlx::Pool<sqlx::Sqlite> {
-    POOL.get_or_init(|| async { make_pool_result().await.unwrap() }).await
+async fn get_pool() -> Result<&'static sqlx::Pool<sqlx::Sqlite>> {
+    let pool_ref = match POOL.get_or_init(make_pool_result).await.as_ref() {
+        Ok(pool_ref) => pool_ref,
+        Err(_e) => return Err(anyhow!("Failed to initialize DB connection pool")),
+    };
+    Ok(pool_ref)
 }
 
 pub async fn add_todo(description: String) -> Result<i64> {
-    let mut conn = get_pool().await.acquire().await?;
+    let mut conn = get_pool().await?.acquire().await?;
 
     // Insert the task, then obtain the ID of this row
     let id = sqlx::query!(
@@ -46,7 +48,7 @@ WHERE id = ?1
         "#,
         id
     )
-    .execute(get_pool().await)
+    .execute(get_pool().await?)
     .await?
     .rows_affected();
 
@@ -61,7 +63,7 @@ FROM todos
 ORDER BY id
         "#
     )
-    .fetch_all(get_pool().await)
+    .fetch_all(get_pool().await?)
     .await?;
 
     for rec in recs {
