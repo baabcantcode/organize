@@ -1,5 +1,4 @@
-/target
-.env*
+/**/target
 /**/*.env*
 
-/dev_data
+/**/dev_data
