@@ -53,14 +53,11 @@ async fn insert_data_helper(
 async fn insert_data(
     pool: &sqlx::Pool<Sqlite>,
     mut reader: Reader<std::fs::File>,
-    tablename: String,
+    tablename: &str,
     headers: Vec<String>,
 ) -> Result<()> {
-    let mut sql = vec!["INSERT INTO ".to_string(), tablename, "(".to_string()];
-    sql.push(headers.join(","));
-    sql.push(")VALUES".to_string());
-    let insert_starter = sql.join("");
-    sql.clear();
+    let mut sql = Vec::<String>::new();
+    let insert_starter = format!("INSERT INTO {} ({}) VALUES ", tablename, headers.join(","));
 
     for _ in 0..headers.len() {
         sql.push("?".to_string());
@@ -91,19 +88,17 @@ async fn insert_data(
     Ok(())
 }
 
-fn read_csv(cli: Vec<String>) -> Result<(String, Vec<String>, Reader<std::fs::File>)> {
-    let input = std::fs::File::open(cli.into_iter().next().unwrap())?;
+
+
+fn read_csv(filepath: &str, tablename: &str) -> Result<(String, Vec<String>, Reader<std::fs::File>)> {
+    let input = std::fs::File::open(filepath)?;
     let mut reader = Reader::from_reader(input);
     let header: Vec<String> = reader.headers().unwrap().deserialize(None)?;
     if header.is_empty() {
-        bail!("empty csv given");
+        bail!("empty csv given in {}", filepath);
     }
     let mut sql = vec![
-        r#"
-create table table1 
-(         
-        "#
-        .to_string(),
+        format!("CREATE TABLE {}\n(", tablename),
         header.join(
             r#" NOT NULL DEFAULT '', 
         "#,
@@ -141,13 +136,21 @@ fn read_queried_data(run_q: &[SqliteRow]) -> Result<String> {
     ))
 }
 
+async fn create_tables(pool: &sqlx::Pool<Sqlite>, filepaths: Vec<String>) -> Result<()> {
+    for (i, filepath) in filepaths.iter().enumerate() {
+        let tablename = format!("table{}", i + 1);
+        let (sql, headers, reader) = read_csv(filepath, &tablename)?;
+        sqlx::query(&sql).execute(pool).await?;
+        insert_data(pool, reader, &tablename, headers).await?;
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let pool = SqlitePool::connect("sqlite::memory:").await?;
-    let (sql, headers, reader) = read_csv(cli.fileinput)?;
-    sqlx::query(&sql).execute(&pool).await?;
-    insert_data(&pool, reader, "table1".to_string(), headers).await?;
+    create_tables(&pool, cli.fileinput).await?;
     let run_q = sqlx::query(&cli.sql).fetch_all(&pool).await?;
     if run_q.is_empty() {
         bail!("no records returned for query:\n{}", cli.sql);
