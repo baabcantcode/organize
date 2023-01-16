@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use csv::Reader;
 use sqlx::sqlite::SqliteRow;
-use sqlx::Sqlite;
+use sqlx::{Sqlite, Column};
 use sqlx::{Row, SqlitePool};
 use std::io::prelude::*;
 
@@ -105,22 +105,24 @@ create table table1
         "#
         .to_string(),
         header.join(
-            r#" STRING NOT NULL DEFAULT '', 
+            r#" NOT NULL DEFAULT '', 
         "#,
         ),
     ];
-    sql.push(" STRING NOT NULL DEFAULT '' ".to_string());
+    sql.push(" NOT NULL DEFAULT '' ".to_string());
     sql.push(")".to_string());
     Ok((sql.join(" "), header, reader))
 }
 
 fn read_queried_data(run_q: &[SqliteRow]) -> Result<String> {
     let mut results = Vec::<String>::new();
-    let mut col_count = 0;
+    let mut col_names = Vec::<&str>::new();
     for row in run_q {
-        col_count = row.len();
+        if col_names.is_empty() && !row.is_empty() {
+            col_names = row.columns().iter().map(|x| x.name()).collect();
+        }
         let mut intermediary = Vec::<String>::new();
-        for i in 0..col_count {
+        for i in 0..row.len() {
             let v8: Vec<u8> = row.try_get_unchecked(i)?;
             let mut unescaped_str: String = std::str::from_utf8(&v8)?.to_string();
             if unescaped_str.find(',').is_some() {
@@ -134,10 +136,7 @@ fn read_queried_data(run_q: &[SqliteRow]) -> Result<String> {
 
     Ok(format!(
         "{}\n{}",
-        (1..col_count + 1)
-            .map(|x| { format!("col{}", x) })
-            .collect::<Vec<String>>()
-            .join(","),
+        col_names.join(","),
         results.join("")
     ))
 }
