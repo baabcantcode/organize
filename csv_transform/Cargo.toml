@@ -2,12 +2,20 @@
 name = "csv_transform"
 version = "0.1.0"
 edition = "2021"
+authors = ["baabcantcode"]
+license = "MIT"
+description = "A tool to read and transform CSVs with sqlite queries"
+readme = "README.md"
+homepage = "https://github.com/baabcantcode/organize/tree/master/csv_transform"
+repository = "https://github.com/baabcantcode/organize/tree/master/csv_transform"
+keywords = ["cli", "sql", "sqlite", "csv"]
+categories = ["command-line-utilities"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.68"
-clap = { version = "4.1.1", features = ["derive"] }
-csv = "1.1.6"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+csv = "1"
 sqlx = { version = "0.6", features = [ "runtime-tokio-native-tls" , "sqlite", "offline" ] }
-tokio = { version = "1.24.1", features = ["rt", "macros"] }
+tokio = { version = "1", features = ["rt", "macros"] }
