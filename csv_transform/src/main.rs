@@ -1,10 +1,9 @@
 use anyhow::{bail, Result};
 use clap::Parser;
-use csv::Reader;
+use csv::{Reader, Writer};
 use sqlx::sqlite::SqliteRow;
-use sqlx::{Sqlite, Column};
+use sqlx::{Column, Sqlite};
 use sqlx::{Row, SqlitePool};
-use std::io::prelude::*;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -88,9 +87,10 @@ async fn insert_data(
     Ok(())
 }
 
-
-
-fn read_csv(filepath: &str, tablename: &str) -> Result<(String, Vec<String>, Reader<std::fs::File>)> {
+fn read_csv(
+    filepath: &str,
+    tablename: &str,
+) -> Result<(String, Vec<String>, Reader<std::fs::File>)> {
     let input = std::fs::File::open(filepath)?;
     let mut reader = Reader::from_reader(input);
     let header: Vec<String> = reader.headers().unwrap().deserialize(None)?;
@@ -109,31 +109,52 @@ fn read_csv(filepath: &str, tablename: &str) -> Result<(String, Vec<String>, Rea
     Ok((sql.join(" "), header, reader))
 }
 
-fn read_queried_data(run_q: &[SqliteRow]) -> Result<String> {
-    let mut results = Vec::<String>::new();
-    let mut col_names = Vec::<&str>::new();
+fn read_queried_data(run_q: &[SqliteRow], outfile: Option<String>) -> Result<()> {
+    let mut results = Vec::<Vec<String>>::new();
+
+    let row1 = run_q.iter().next();
+    if row1.is_none() {
+        bail!("no results found for the given query");
+    }
+    results.push(
+        row1.unwrap()
+            .columns()
+            .iter()
+            .map(|x| x.name().to_string())
+            .collect(),
+    );
+
     for row in run_q {
-        if col_names.is_empty() && !row.is_empty() {
-            col_names = row.columns().iter().map(|x| x.name()).collect();
-        }
         let mut intermediary = Vec::<String>::new();
         for i in 0..row.len() {
             let v8: Vec<u8> = row.try_get_unchecked(i)?;
-            let mut unescaped_str: String = std::str::from_utf8(&v8)?.to_string();
-            if unescaped_str.find(',').is_some() {
-                unescaped_str = format!("\"{}\"", unescaped_str);
-            }
+            let unescaped_str: String = std::str::from_utf8(&v8)?.to_string();
             intermediary.push(unescaped_str);
         }
-        results.push(intermediary.join(","));
-        results.push("\n".to_string());
+        results.push(intermediary);
     }
 
-    Ok(format!(
-        "{}\n{}",
-        col_names.join(","),
-        results.join("")
-    ))
+    match outfile {
+        None => {
+            println!(
+                "\nresults:\n\n{}",
+                results
+                    .iter()
+                    .map(|x| x.join(","))
+                    .collect::<Vec<String>>()
+                    .iter()
+                    .map(|x| format!("{}\n", x))
+                    .collect::<String>()
+            );
+        }
+        Some(outcsv) => {
+            let mut writer = Writer::from_path(outcsv)?;
+            for record in results {
+                writer.write_record(record)?;
+            }
+        }
+    };
+    Ok(())
 }
 
 async fn create_tables(pool: &sqlx::Pool<Sqlite>, filepaths: Vec<String>) -> Result<()> {
@@ -155,17 +176,7 @@ async fn main() -> Result<()> {
     if run_q.is_empty() {
         bail!("no records returned for query:\n{}", cli.sql);
     }
-    let to_write = read_queried_data(&run_q)?;
-
-    match cli.outcsv {
-        None => {
-            println!("\nresults:\n\n{}", to_write);
-        }
-        Some(outcsv) => {
-            let mut writer = std::fs::File::create(outcsv)?;
-            writer.write_all(to_write.as_bytes())?;
-        }
-    }
+    read_queried_data(&run_q, cli.outcsv)?;
 
     Ok(())
 }
